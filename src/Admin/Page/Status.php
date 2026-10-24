@@ -15,6 +15,7 @@ use Netivo\ActionLoggerMU\Transport\Client;
 use Netivo\ActionLoggerMU\Transport\Queue;
 use Netivo\ActionLoggerMU\Transport\QueueWorker;
 use Netivo\ActionLoggerMU\Transport\Status as DeliveryStatus;
+use Netivo\ActionLoggerMU\Update\Updater;
 
 if ( ! defined( 'ABSPATH' ) ) {
 	header( 'HTTP/1.0 403 Forbidden' );
@@ -45,18 +46,20 @@ class Status {
 	/**
 	 * Status constructor.
 	 *
-	 * @param Config         $config Module configuration.
-	 * @param Queue          $queue  Local fallback queue.
-	 * @param DeliveryStatus $status Delivery status store.
-	 * @param Client         $client Ingestion API client.
-	 * @param QueueWorker    $worker Queue worker.
+	 * @param Config         $config  Module configuration.
+	 * @param Queue          $queue   Local fallback queue.
+	 * @param DeliveryStatus $status  Delivery status store.
+	 * @param Client         $client  Ingestion API client.
+	 * @param QueueWorker    $worker  Queue worker.
+	 * @param Updater        $updater Self-updater.
 	 */
 	public function __construct(
 		private readonly Config $config,
 		private readonly Queue $queue,
 		private readonly DeliveryStatus $status,
 		private readonly Client $client,
-		private readonly QueueWorker $worker
+		private readonly QueueWorker $worker,
+		private readonly Updater $updater
 	) {
 		add_action( 'admin_menu', [ $this, 'add_menu' ] );
 		add_action( 'admin_init', [ $this, 'handle_submit' ] );
@@ -95,8 +98,10 @@ class Status {
 		$operation = isset( $_POST['operation'] ) ? sanitize_key( wp_unslash( $_POST['operation'] ) ) : '';
 
 		$notice = match ( $operation ) {
-			'ping'  => $this->ping(),
+			'ping' => $this->ping(),
 			'flush' => $this->flush_queue(),
+			'check_update' => $this->check_update(),
+			'apply_update' => $this->apply_update(),
 			default => null,
 		};
 
@@ -152,22 +157,28 @@ class Status {
 			delete_transient( self::NOTICE_TRANSIENT . get_current_user_id() );
 		}
 
+		$update = $this->updater->check();
+
 		return [
-			'state'           => $state,
-			'errors'          => $this->config->errors(),
-			'endpoint'        => '' === $this->config->api_url() ? '' : $this->config->endpoint(),
-			'masked_key'      => $this->config->masked_key(),
-			'delivery'        => $this->config->delivery(),
-			'backlog'         => $this->queue->count(),
-			'oldest_queued'   => $this->queue->oldest(),
-			'last_success_at' => isset( $status['last_success_at'] ) ? (int) $status['last_success_at'] : null,
-			'last_error'      => isset( $status['last_error'] ) ? (string) $status['last_error'] : '',
-			'last_error_at'   => isset( $status['last_error_at'] ) ? (int) $status['last_error_at'] : null,
-			'dropped_total'   => (int) ( $status['dropped_total'] ?? 0 ),
-			'next_run'        => wp_next_scheduled( QueueWorker::HOOK ),
-			'version'         => Plugin::VERSION,
-			'notice'          => is_array( $notice ) ? $notice : null,
-			'can_send'        => $this->config->is_active(),
+			'state'               => $state,
+			'errors'              => $this->config->errors(),
+			'endpoint'            => '' === $this->config->api_url() ? '' : $this->config->endpoint(),
+			'masked_key'          => $this->config->masked_key(),
+			'delivery'            => $this->config->delivery(),
+			'backlog'             => $this->queue->count(),
+			'oldest_queued'       => $this->queue->oldest(),
+			'last_success_at'     => isset( $status['last_success_at'] ) ? (int) $status['last_success_at'] : null,
+			'last_error'          => isset( $status['last_error'] ) ? (string) $status['last_error'] : '',
+			'last_error_at'       => isset( $status['last_error_at'] ) ? (int) $status['last_error_at'] : null,
+			'dropped_total'       => (int) ( $status['dropped_total'] ?? 0 ),
+			'next_run'            => wp_next_scheduled( QueueWorker::HOOK ),
+			'version'             => Plugin::VERSION,
+			'notice'              => is_array( $notice ) ? $notice : null,
+			'can_send'            => $this->config->is_active(),
+			'update_available'    => $update['update_available'],
+			'latest_version'      => $update['latest_version'],
+			'update_checked_at'   => $update['checked_at'],
+			'update_release_url'  => $update['release']['html_url'] ?? '',
 		];
 	}
 
@@ -236,6 +247,51 @@ class Status {
 			'type'    => 0 === $remaining ? 'success' : 'warning',
 			/* translators: 1: delivered events, 2: events still queued. */
 			'message' => sprintf( __( 'Delivered %1$d queued event(s); %2$d remaining.', 'netivo' ), $delivered, $remaining ),
+		];
+	}
+
+	/**
+	 * Forces a fresh update check, bypassing the cache.
+	 *
+	 * @return array{type: string, message: string}
+	 */
+	private function check_update(): array {
+		$result = $this->updater->check( true );
+
+		if ( $result['update_available'] ) {
+			return [
+				'type'    => 'warning',
+				/* translators: 1: latest version, 2: currently running version. */
+				'message' => sprintf( __( 'Update available: version %1$s (currently running %2$s).', 'netivo' ), $result['latest_version'], $result['current_version'] ),
+			];
+		}
+
+		return [
+			'type'    => 'success',
+			'message' => __( 'No update available; already on the latest version.', 'netivo' ),
+		];
+	}
+
+	/**
+	 * Downloads and installs the latest release.
+	 *
+	 * @return array{type: string, message: string}
+	 */
+	private function apply_update(): array {
+		$result = $this->updater->apply();
+
+		if ( $result['success'] ) {
+			return [
+				'type'    => 'success',
+				/* translators: %s: new version. */
+				'message' => sprintf( __( 'Updated to version %s. Reload this page to confirm.', 'netivo' ), $result['new_version'] ),
+			];
+		}
+
+		return [
+			'type'    => 'error',
+			/* translators: %s: failure reason. */
+			'message' => sprintf( __( 'Update failed: %s', 'netivo' ), $result['error'] ),
 		];
 	}
 }

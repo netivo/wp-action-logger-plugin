@@ -20,6 +20,10 @@
  * @var string                    $version
  * @var array{type: string, message: string}|null $notice
  * @var bool                      $can_send
+ * @var bool                      $update_available
+ * @var string|null               $latest_version
+ * @var int                       $update_checked_at
+ * @var string                    $update_release_url
  */
 
 use Netivo\ActionLoggerMU\Admin\Page\Status;
@@ -133,7 +137,22 @@ $nt_al_mu_format = static function ( ?int $timestamp ): string {
 	<?php endif; ?>
 	<tr>
 		<th scope="row"><?php esc_html_e( 'Module version', 'netivo' ); ?></th>
-		<td><?php echo esc_html( $version ); ?></td>
+		<td>
+			<?php echo esc_html( $version ); ?>
+			<?php if ( $update_available && null !== $latest_version ) : ?>
+				<?php /* translators: %s: latest available version. */ ?>
+				<strong style="color:#d63638;"><?php echo esc_html( sprintf( __( '— update available: %s', 'netivo' ), $latest_version ) ); ?></strong>
+				<?php if ( '' !== $update_release_url ) : ?>
+					(<a href="<?php echo esc_url( $update_release_url ); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e( 'release notes', 'netivo' ); ?></a>)
+				<?php endif; ?>
+			<?php else : ?>
+				<span class="description"><?php esc_html_e( 'up to date', 'netivo' ); ?></span>
+			<?php endif; ?>
+			<?php if ( $update_checked_at > 0 ) : ?>
+				<?php /* translators: %s: relative time. */ ?>
+				<p class="description"><?php echo esc_html( sprintf( __( 'Last checked %s ago.', 'netivo' ), human_time_diff( $update_checked_at ) ) ); ?></p>
+			<?php endif; ?>
+		</td>
 	</tr>
 </table>
 
@@ -146,6 +165,12 @@ $nt_al_mu_format = static function ( ?int $timestamp ): string {
 		</button>
 		<button type="submit" name="operation" value="flush" class="button" <?php disabled( ! $can_send || 0 === (int) $backlog ); ?>>
 			<?php esc_html_e( 'Send queued events now', 'netivo' ); ?>
+		</button>
+		<button type="submit" name="operation" value="check_update" class="button">
+			<?php esc_html_e( 'Check for updates', 'netivo' ); ?>
+		</button>
+		<button type="submit" name="operation" value="apply_update" class="button" <?php disabled( ! $update_available ); ?> onclick="return confirm('<?php echo esc_js( __( 'This will replace the plugin files on this site from the latest release. Continue?', 'netivo' ) ); ?>');">
+			<?php esc_html_e( 'Update now', 'netivo' ); ?>
 		</button>
 	</p>
 </form>

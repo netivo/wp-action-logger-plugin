@@ -21,6 +21,8 @@ use Netivo\ActionLoggerMU\Transport\EventSink;
 use Netivo\ActionLoggerMU\Transport\Queue;
 use Netivo\ActionLoggerMU\Transport\QueueWorker;
 use Netivo\ActionLoggerMU\Transport\Status;
+use Netivo\ActionLoggerMU\Update\ReleaseClient;
+use Netivo\ActionLoggerMU\Update\Updater;
 use Throwable;
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -40,9 +42,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 class Plugin {
 
 	/**
-	 * Module version, sent in the User-Agent of API requests.
+	 * Module version, sent in the User-Agent of API requests and compared
+	 * against the update repository's latest release tag by Update\Updater.
+	 * Keep this in sync with the tag applied to the mirrored repository on
+	 * every release that touches this package.
 	 */
-	public const VERSION = '1.0.0';
+	public const VERSION = '0.2.1';
 
 	/**
 	 * Resolved configuration.
@@ -183,7 +188,9 @@ class Plugin {
 			return;
 		}
 
-		new Admin( $this->config, $this->queue, $this->status, $this->client, $this->worker );
+		$updater = new Updater( $this->config, $this->client, new ReleaseClient( $this->config ) );
+
+		new Admin( $this->config, $this->queue, $this->status, $this->client, $this->worker, $updater );
 	}
 
 	/**

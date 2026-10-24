@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Netivo Action Logger (MU)
  * Description: Streams admin user actions to Netivo Action Logger telemetry. Read-only configuration via wp-config.php constants; see the bundled README for installation.
- * Version: 1.0.0
+ * Version: 0.2.1
  * Author: Netivo
  * Author URI: https://netivo.pl
  * License: Proprietary
@@ -20,6 +20,16 @@
 if ( ! defined( 'ABSPATH' ) ) {
 	header( 'HTTP/1.0 403 Forbidden' );
 	exit;
+}
+
+// The self-updater (src/Update/Updater.php) replaces this directory and the
+// loader file in place, so it needs their exact paths rather than a relative
+// one computed at update time.
+if ( ! defined( 'NETIVO_ACTION_LOGGER_MU_DIR' ) ) {
+	define( 'NETIVO_ACTION_LOGGER_MU_DIR', __DIR__ );
+}
+if ( ! defined( 'NETIVO_ACTION_LOGGER_MU_LOADER_FILE' ) ) {
+	define( 'NETIVO_ACTION_LOGGER_MU_LOADER_FILE', dirname( __DIR__ ) . '/netivo-action-logger-mu-loader.php' );
 }
 
 // No Composer autoloader is assumed on the host site: every class is loaded
@@ -47,6 +57,9 @@ require_once __DIR__ . '/src/Listeners/SettingsListener.php';
 require_once __DIR__ . '/src/Listeners/SystemListener.php';
 require_once __DIR__ . '/src/Listeners/UserListener.php';
 require_once __DIR__ . '/src/Listeners/WooCommerceListener.php';
+
+require_once __DIR__ . '/src/Update/ReleaseClient.php';
+require_once __DIR__ . '/src/Update/Updater.php';
 
 require_once __DIR__ . '/src/Access/Guard.php';
 require_once __DIR__ . '/src/Admin/Page/Status.php';
