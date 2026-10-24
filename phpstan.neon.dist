@@ -1,0 +1,14 @@
+includes:
+    - vendor/szepeviktor/phpstan-wordpress/extension.neon
+
+parameters:
+    level: 7
+    paths:
+        - src
+    bootstrapFiles:
+        - phpstan-bootstrap.php
+    phpVersion:
+        min: 80200
+        max: 80500
+    scanFiles:
+        - vendor/php-stubs/woocommerce-stubs/woocommerce-stubs.php

@@ -1,0 +1,177 @@
+<?php
+/**
+ * Action Logger MU status page. Rendered by Admin\Page\Status::render() with the
+ * data from Status::report() extracted into local variables.
+ *
+ * @package Netivo\ActionLoggerMU
+ *
+ * @var string                    $state
+ * @var string[]                  $errors
+ * @var string                    $endpoint
+ * @var string                    $masked_key
+ * @var string                    $delivery
+ * @var int                       $backlog
+ * @var string|null               $oldest_queued
+ * @var int|null                  $last_success_at
+ * @var string                    $last_error
+ * @var int|null                  $last_error_at
+ * @var int                       $dropped_total
+ * @var int|false                 $next_run
+ * @var string                    $version
+ * @var array{type: string, message: string}|null $notice
+ * @var bool                      $can_send
+ * @var bool                      $update_available
+ * @var string|null               $latest_version
+ * @var int                       $update_checked_at
+ * @var string                    $update_release_url
+ */
+
+use Netivo\ActionLoggerMU\Admin\Page\Status;
+
+if ( ! defined( 'ABSPATH' ) ) {
+	header( 'HTTP/1.0 403 Forbidden' );
+	exit;
+}
+
+$nt_al_mu_states = [
+	'connected'     => [ 'color' => '#00a32a', 'label' => __( 'Connected', 'netivo' ) ],
+	'waiting'       => [ 'color' => '#dba617', 'label' => __( 'Configured, nothing sent yet', 'netivo' ) ],
+	'offline'       => [ 'color' => '#d63638', 'label' => __( 'Offline / connection failed', 'netivo' ) ],
+	'unauthorized'  => [ 'color' => '#d63638', 'label' => __( 'API key refused', 'netivo' ) ],
+	'misconfigured' => [ 'color' => '#d63638', 'label' => __( 'Not configured', 'netivo' ) ],
+	'disabled'      => [ 'color' => '#787c82', 'label' => __( 'Disabled', 'netivo' ) ],
+];
+$nt_al_mu_state  = $nt_al_mu_states[ $state ] ?? $nt_al_mu_states['waiting'];
+$nt_al_mu_format = static function ( ?int $timestamp ): string {
+	if ( empty( $timestamp ) ) {
+		return __( 'never', 'netivo' );
+	}
+
+	/* translators: 1: date and time, 2: relative time. */
+	return sprintf( __( '%1$s (%2$s ago)', 'netivo' ), wp_date( 'Y-m-d H:i:s', $timestamp ), human_time_diff( $timestamp ) );
+};
+?>
+<div class="wrap">
+<h1><?php esc_html_e( 'Action Logger (MU)', 'netivo' ); ?></h1>
+
+<?php if ( is_array( $notice ) ) : ?>
+	<div class="notice notice-<?php echo esc_attr( $notice['type'] ); ?> is-dismissible">
+		<p><?php echo esc_html( $notice['message'] ); ?></p>
+	</div>
+<?php endif; ?>
+
+<p><?php esc_html_e( 'Audit events from this site are sent to the Netivo Action Logger by a must-use plugin. Configuration is read-only here: it comes from wp-config.php constants.', 'netivo' ); ?></p>
+
+<table class="form-table" role="presentation">
+	<tr>
+		<th scope="row"><?php esc_html_e( 'Status', 'netivo' ); ?></th>
+		<td>
+			<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:<?php echo esc_attr( $nt_al_mu_state['color'] ); ?>;margin-right:6px;" aria-hidden="true"></span>
+			<strong><?php echo esc_html( $nt_al_mu_state['label'] ); ?></strong>
+			<?php if ( ! empty( $errors ) ) : ?>
+				<ul style="margin:8px 0 0;list-style:disc;padding-left:20px;">
+					<?php foreach ( $errors as $nt_al_mu_error ) : ?>
+						<li><?php echo esc_html( $nt_al_mu_error ); ?></li>
+					<?php endforeach; ?>
+				</ul>
+			<?php endif; ?>
+		</td>
+	</tr>
+	<tr>
+		<th scope="row"><?php esc_html_e( 'Endpoint', 'netivo' ); ?></th>
+		<td><code><?php echo esc_html( '' === $endpoint ? '—' : $endpoint ); ?></code></td>
+	</tr>
+	<tr>
+		<th scope="row"><?php esc_html_e( 'API key', 'netivo' ); ?></th>
+		<td><code><?php echo esc_html( '' === $masked_key ? '—' : $masked_key ); ?></code></td>
+	</tr>
+	<tr>
+		<th scope="row"><?php esc_html_e( 'Delivery mode', 'netivo' ); ?></th>
+		<td>
+			<code><?php echo esc_html( $delivery ); ?></code>
+			<p class="description">
+				<?php
+				echo esc_html(
+					'queue' === $delivery
+						? __( 'Events are written to the local queue and sent by WP-Cron every 5 minutes.', 'netivo' )
+						: __( 'Events are sent at the end of each request, after the page has been delivered; failures are queued.', 'netivo' )
+				);
+				?>
+			</p>
+		</td>
+	</tr>
+	<tr>
+		<th scope="row"><?php esc_html_e( 'Queued events', 'netivo' ); ?></th>
+		<td>
+			<strong><?php echo esc_html( number_format_i18n( (int) $backlog ) ); ?></strong>
+			<?php if ( ! empty( $oldest_queued ) ) : ?>
+				<?php /* translators: %s: date and time (UTC). */ ?>
+				<span class="description"><?php echo esc_html( sprintf( __( 'oldest from %s UTC', 'netivo' ), $oldest_queued ) ); ?></span>
+			<?php endif; ?>
+			<?php if ( ! empty( $next_run ) ) : ?>
+				<?php /* translators: %s: relative time. */ ?>
+				<p class="description"><?php echo esc_html( sprintf( __( 'Next queue run in %s.', 'netivo' ), human_time_diff( (int) $next_run ) ) ); ?></p>
+			<?php endif; ?>
+		</td>
+	</tr>
+	<tr>
+		<th scope="row"><?php esc_html_e( 'Last successful delivery', 'netivo' ); ?></th>
+		<td><?php echo esc_html( $nt_al_mu_format( $last_success_at ) ); ?></td>
+	</tr>
+	<tr>
+		<th scope="row"><?php esc_html_e( 'Last error', 'netivo' ); ?></th>
+		<td>
+			<?php if ( '' === $last_error ) : ?>
+				<?php esc_html_e( 'none', 'netivo' ); ?>
+			<?php else : ?>
+				<code><?php echo esc_html( $last_error ); ?></code>
+				<p class="description"><?php echo esc_html( $nt_al_mu_format( $last_error_at ) ); ?></p>
+			<?php endif; ?>
+		</td>
+	</tr>
+	<?php if ( $dropped_total > 0 ) : ?>
+		<tr>
+			<th scope="row"><?php esc_html_e( 'Dropped events', 'netivo' ); ?></th>
+			<td><?php echo esc_html( number_format_i18n( (int) $dropped_total ) ); ?></td>
+		</tr>
+	<?php endif; ?>
+	<tr>
+		<th scope="row"><?php esc_html_e( 'Module version', 'netivo' ); ?></th>
+		<td>
+			<?php echo esc_html( $version ); ?>
+			<?php if ( $update_available && null !== $latest_version ) : ?>
+				<?php /* translators: %s: latest available version. */ ?>
+				<strong style="color:#d63638;"><?php echo esc_html( sprintf( __( '— update available: %s', 'netivo' ), $latest_version ) ); ?></strong>
+				<?php if ( '' !== $update_release_url ) : ?>
+					(<a href="<?php echo esc_url( $update_release_url ); ?>" target="_blank" rel="noopener noreferrer"><?php esc_html_e( 'release notes', 'netivo' ); ?></a>)
+				<?php endif; ?>
+			<?php else : ?>
+				<span class="description"><?php esc_html_e( 'up to date', 'netivo' ); ?></span>
+			<?php endif; ?>
+			<?php if ( $update_checked_at > 0 ) : ?>
+				<?php /* translators: %s: relative time. */ ?>
+				<p class="description"><?php echo esc_html( sprintf( __( 'Last checked %s ago.', 'netivo' ), human_time_diff( $update_checked_at ) ) ); ?></p>
+			<?php endif; ?>
+		</td>
+	</tr>
+</table>
+
+<form method="post">
+	<?php wp_nonce_field( 'save_' . Status::SLUG ); ?>
+	<input type="hidden" name="save_<?php echo esc_attr( Status::SLUG ); ?>" value="1">
+	<p class="submit">
+		<button type="submit" name="operation" value="ping" class="button button-primary" <?php disabled( ! $can_send ); ?>>
+			<?php esc_html_e( 'Send test ping', 'netivo' ); ?>
+		</button>
+		<button type="submit" name="operation" value="flush" class="button" <?php disabled( ! $can_send || 0 === (int) $backlog ); ?>>
+			<?php esc_html_e( 'Send queued events now', 'netivo' ); ?>
+		</button>
+		<button type="submit" name="operation" value="check_update" class="button">
+			<?php esc_html_e( 'Check for updates', 'netivo' ); ?>
+		</button>
+		<button type="submit" name="operation" value="apply_update" class="button" <?php disabled( ! $update_available ); ?> onclick="return confirm('<?php echo esc_js( __( 'This will replace the plugin files on this site from the latest release. Continue?', 'netivo' ) ); ?>');">
+			<?php esc_html_e( 'Update now', 'netivo' ); ?>
+		</button>
+	</p>
+</form>
+</div>
