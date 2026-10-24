@@ -108,4 +108,13 @@ final class ConfigTest extends TestCase {
 		self::assertSame( 'nt_live_0123…cdef', Config::from_array( [ 'api_key' => self::KEY ] )->masked_key() );
 		self::assertSame( '', Config::from_array( [] )->masked_key() );
 	}
+
+	public function test_update_repo_defaults_and_is_overridable(): void {
+		self::assertSame( Config::DEFAULT_UPDATE_REPO, Config::from_array( [] )->update_repo() );
+		self::assertSame( '', Config::from_array( [] )->update_token() );
+		self::assertSame(
+			'example/fork',
+			Config::from_array( [ 'update_repo' => 'example/fork', 'update_token' => 'ghp_x' ] )->update_repo()
+		);
+	}
 }

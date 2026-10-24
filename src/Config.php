@@ -44,6 +44,11 @@ final class Config {
 	private const KEY_PATTERN = '/^nt_live_[0-9a-f]{32}$/';
 
 	/**
+	 * `owner/repo` the self-updater checks for new releases.
+	 */
+	public const DEFAULT_UPDATE_REPO = 'netivo/wp-action-logger-plugin';
+
+	/**
 	 * Configuration key => constant name.
 	 */
 	private const CONSTANTS = [
@@ -53,6 +58,8 @@ final class Config {
 		'delivery'        => 'NETIVO_ACTION_LOGGER_MU_DELIVERY',
 		'timeout'         => 'NETIVO_ACTION_LOGGER_MU_TIMEOUT',
 		'trusted_proxies' => 'NETIVO_ACTION_LOGGER_MU_TRUSTED_PROXIES',
+		'update_repo'     => 'NETIVO_ACTION_LOGGER_MU_UPDATE_REPO',
+		'update_token'    => 'NETIVO_ACTION_LOGGER_MU_UPDATE_TOKEN',
 	];
 
 	/**
@@ -64,6 +71,8 @@ final class Config {
 	 * @param string   $delivery        One of the DELIVERY_* constants.
 	 * @param int      $timeout         Total HTTP timeout in seconds.
 	 * @param string[] $trusted_proxies Proxy IPs whose X-Forwarded-For header is trusted.
+	 * @param string   $update_repo     `owner/repo` the self-updater checks for new releases.
+	 * @param string   $update_token    Optional GitHub token, for a private update repo or a higher rate limit.
 	 */
 	public function __construct(
 		private readonly string $api_url,
@@ -71,7 +80,9 @@ final class Config {
 		private readonly bool $enabled,
 		private readonly string $delivery,
 		private readonly int $timeout,
-		private readonly array $trusted_proxies
+		private readonly array $trusted_proxies,
+		private readonly string $update_repo = self::DEFAULT_UPDATE_REPO,
+		private readonly string $update_token = ''
 	) {
 	}
 
@@ -125,7 +136,9 @@ final class Config {
 			self::to_bool( $values['enabled'] ),
 			$delivery,
 			max( 1, min( 10, $timeout ) ),
-			$proxies
+			$proxies,
+			is_string( $values['update_repo'] ) ? trim( $values['update_repo'] ) : self::DEFAULT_UPDATE_REPO,
+			is_string( $values['update_token'] ) ? trim( $values['update_token'] ) : ''
 		);
 	}
 
@@ -142,6 +155,8 @@ final class Config {
 			'delivery'        => self::DELIVERY_SHUTDOWN,
 			'timeout'         => self::DEFAULT_TIMEOUT,
 			'trusted_proxies' => [],
+			'update_repo'     => self::DEFAULT_UPDATE_REPO,
+			'update_token'    => '',
 		];
 	}
 
@@ -249,6 +264,25 @@ final class Config {
 	 */
 	public function trusted_proxies(): array {
 		return $this->trusted_proxies;
+	}
+
+	/**
+	 * `owner/repo` the self-updater checks for new releases.
+	 *
+	 * @return string
+	 */
+	public function update_repo(): string {
+		return $this->update_repo;
+	}
+
+	/**
+	 * Optional GitHub token sent as a Bearer header to the releases API, for a
+	 * private update repo or to raise the unauthenticated rate limit.
+	 *
+	 * @return string
+	 */
+	public function update_token(): string {
+		return $this->update_token;
 	}
 
 	/**
