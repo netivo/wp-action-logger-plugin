@@ -69,11 +69,9 @@ final class Guard {
 	 * @return string[]
 	 */
 	public static function allowed_domains(): array {
-		/**
-		 * Filters the email domains allowed to see the Action Logger MU admin UI.
-		 *
-		 * @param string[] $domains Lowercase domains, without a leading @.
-		 */
+		// Filters the email domains allowed to see the Action Logger MU admin UI
+		// (netivo_action_logger_mu_allowed_domains); not documented inline with
+		// a @param tag, since the result is validated below rather than trusted.
 		$domains = apply_filters( self::FILTER, self::ALLOWED_DOMAINS );
 		if ( ! is_array( $domains ) ) {
 			return self::ALLOWED_DOMAINS;

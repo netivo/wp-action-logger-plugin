@@ -32,7 +32,7 @@ final class GuardTest extends TestCase {
 
 	public function test_email_is_privileged_honours_the_filter(): void {
 		Filters\expectApplied( 'netivo_action_logger_mu_allowed_domains' )
-			->once()
+			->twice()
 			->andReturn( [ 'example.com' ] );
 
 		self::assertTrue( Guard::email_is_privileged( 'anyone@example.com' ) );

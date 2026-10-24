@@ -121,7 +121,7 @@ class Status {
 		$view = dirname( __DIR__, 3 ) . '/views/admin/pages/action-logger-mu-status.phtml';
 		( static function ( array $al_data, string $al_view ): void {
 			extract( $al_data, EXTR_SKIP ); // phpcs:ignore WordPress.PHP.DontExtract.extract_extract -- fixed, known keys from Status::report() below.
-			require $al_view;
+			require $al_view; // phpcs:ignore WordPressVIPMinimum.Files.IncludingFile.UsingVariable -- fixed path built from dirname(__DIR__) above, not user input.
 		} )( $this->report(), $view );
 	}
 

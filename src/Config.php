@@ -83,11 +83,9 @@ final class Config {
 	public static function load(): self {
 		$values = self::defaults();
 
-		/**
-		 * Filters the Action Logger MU configuration before wp-config constants are applied.
-		 *
-		 * @param array<string, mixed> $values Default configuration values.
-		 */
+		// Filters the configuration before wp-config constants are applied
+		// (netivo_action_logger_mu_config); not documented inline with a
+		// @param tag, since the result is validated below rather than trusted.
 		$filtered = apply_filters( 'netivo_action_logger_mu_config', $values );
 		if ( is_array( $filtered ) ) {
 			$values = array_merge( $values, self::known( $filtered ) );
