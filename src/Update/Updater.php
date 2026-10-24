@@ -157,7 +157,7 @@ class Updater {
 	 *
 	 * @throws RuntimeException When the download fails.
 	 */
-	private function download( string $url ): string {
+	protected function download( string $url ): string {
 		if ( ! function_exists( 'download_url' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/file.php';
 		}
@@ -179,7 +179,7 @@ class Updater {
 	 *
 	 * @throws RuntimeException When extraction fails.
 	 */
-	private function extract( string $zip_file ): string {
+	protected function extract( string $zip_file ): string {
 		if ( ! function_exists( 'WP_Filesystem' ) ) {
 			require_once ABSPATH . 'wp-admin/includes/file.php';
 		}
