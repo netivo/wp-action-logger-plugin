@@ -12,3 +12,4 @@ parameters:
         max: 80500
     scanFiles:
         - vendor/php-stubs/woocommerce-stubs/woocommerce-stubs.php
+        - phpstan-stubs.php
