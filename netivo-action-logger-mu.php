@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Netivo Action Logger (MU)
  * Description: Streams admin user actions to Netivo Action Logger telemetry. Read-only configuration via wp-config.php constants; see the bundled README for installation.
- * Version: 0.6.0
+ * Version: 0.6.1
  * Author: Netivo
  * Author URI: https://netivo.pl
  * License: Proprietary
@@ -41,14 +41,19 @@ require_once __DIR__ . '/src/Config.php';
 require_once __DIR__ . '/src/Payload/Redactor.php';
 require_once __DIR__ . '/src/Payload/Actor.php';
 require_once __DIR__ . '/src/Payload/EventPayload.php';
+require_once __DIR__ . '/src/Payload/PathSanitizer.php';
+require_once __DIR__ . '/src/Payload/ErrorPayload.php';
 
 require_once __DIR__ . '/src/Transport/EventSink.php';
+require_once __DIR__ . '/src/Transport/ErrorSink.php';
 require_once __DIR__ . '/src/Transport/DeliveryResult.php';
 require_once __DIR__ . '/src/Transport/Status.php';
 require_once __DIR__ . '/src/Transport/Queue.php';
+require_once __DIR__ . '/src/Transport/ErrorQueue.php';
 require_once __DIR__ . '/src/Transport/Client.php';
 require_once __DIR__ . '/src/Transport/QueueWorker.php';
 require_once __DIR__ . '/src/Transport/Dispatcher.php';
+require_once __DIR__ . '/src/Transport/ErrorDispatcher.php';
 
 require_once __DIR__ . '/src/Listeners/AbstractListener.php';
 require_once __DIR__ . '/src/Listeners/AuthListener.php';
@@ -57,6 +62,14 @@ require_once __DIR__ . '/src/Listeners/SettingsListener.php';
 require_once __DIR__ . '/src/Listeners/SystemListener.php';
 require_once __DIR__ . '/src/Listeners/UserListener.php';
 require_once __DIR__ . '/src/Listeners/WooCommerceListener.php';
+
+require_once __DIR__ . '/src/ErrorLog/FileScanner.php';
+require_once __DIR__ . '/src/ErrorLog/FileTailer.php';
+require_once __DIR__ . '/src/ErrorLog/LogParser.php';
+require_once __DIR__ . '/src/ErrorLog/ErrorCollector.php';
+require_once __DIR__ . '/src/ErrorLog/RuntimeInterceptor.php';
+
+require_once __DIR__ . '/src/Cli/ErrorLogCommand.php';
 
 require_once __DIR__ . '/src/Update/ReleaseClient.php';
 require_once __DIR__ . '/src/Update/Updater.php';
