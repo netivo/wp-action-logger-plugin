@@ -8,6 +8,12 @@
 namespace Netivo\ActionLoggerMU;
 
 use Netivo\ActionLoggerMU\Admin\Admin;
+use Netivo\ActionLoggerMU\Cli\ErrorLogCommand;
+use Netivo\ActionLoggerMU\ErrorLog\ErrorCollector;
+use Netivo\ActionLoggerMU\ErrorLog\FileScanner;
+use Netivo\ActionLoggerMU\ErrorLog\FileTailer;
+use Netivo\ActionLoggerMU\ErrorLog\LogParser;
+use Netivo\ActionLoggerMU\ErrorLog\RuntimeInterceptor;
 use Netivo\ActionLoggerMU\Listeners\AbstractListener;
 use Netivo\ActionLoggerMU\Listeners\AuthListener;
 use Netivo\ActionLoggerMU\Listeners\ContentListener;
@@ -17,6 +23,8 @@ use Netivo\ActionLoggerMU\Listeners\UserListener;
 use Netivo\ActionLoggerMU\Listeners\WooCommerceListener;
 use Netivo\ActionLoggerMU\Transport\Client;
 use Netivo\ActionLoggerMU\Transport\Dispatcher;
+use Netivo\ActionLoggerMU\Transport\ErrorDispatcher;
+use Netivo\ActionLoggerMU\Transport\ErrorQueue;
 use Netivo\ActionLoggerMU\Transport\EventSink;
 use Netivo\ActionLoggerMU\Transport\Queue;
 use Netivo\ActionLoggerMU\Transport\QueueWorker;
@@ -47,7 +55,7 @@ class Plugin {
 	 * Keep this in sync with the tag applied to the mirrored repository on
 	 * every release that touches this package.
 	 */
-	public const VERSION = '0.2.1';
+	public const VERSION = '0.6.0';
 
 	/**
 	 * Resolved configuration.
@@ -99,6 +107,34 @@ class Plugin {
 	private ?Dispatcher $dispatcher = null;
 
 	/**
+	 * Local fallback queue for error events, separate from the audit-event queue.
+	 *
+	 * @var ErrorQueue|null
+	 */
+	private ?ErrorQueue $error_queue = null;
+
+	/**
+	 * Queue worker draining the error-event queue.
+	 *
+	 * @var QueueWorker|null
+	 */
+	private ?QueueWorker $error_worker = null;
+
+	/**
+	 * Request-scoped error-event dispatcher, fed by RuntimeInterceptor.
+	 *
+	 * @var ErrorDispatcher|null
+	 */
+	private ?ErrorDispatcher $error_dispatcher = null;
+
+	/**
+	 * WP-Cron job scanning, tailing and parsing known log files.
+	 *
+	 * @var ErrorCollector|null
+	 */
+	private ?ErrorCollector $error_collector = null;
+
+	/**
 	 * Plugin constructor.
 	 */
 	public function __construct() {
@@ -129,22 +165,46 @@ class Plugin {
 			$this->client = new Client( $config );
 			$this->worker = new QueueWorker( $this->queue, $this->client, $this->status );
 
+			$this->error_queue  = new ErrorQueue();
+			$this->error_worker = new QueueWorker(
+				$this->error_queue,
+				$this->client,
+				$this->status,
+				hook: 'nt_mu_action_logger_flush_error_queue',
+				lock_key: 'nt_mu_action_logger_error_worker_lock',
+				deliver_method: 'deliver_errors'
+			);
+			$this->error_collector = new ErrorCollector( new FileScanner(), new FileTailer(), new LogParser(), $this->client, $this->error_queue );
+
 			$this->queue->install();
 			$this->worker->register();
+			$this->error_queue->install();
+			$this->error_worker->register();
+			$this->error_collector->register();
+
+			$this->boot_cli();
 
 			if ( ! $config->is_active() ) {
 				$this->worker->unschedule();
+				$this->error_worker->unschedule();
+				$this->error_collector->unschedule();
 				$this->boot_admin();
 
 				return;
 			}
 
 			$this->worker->schedule();
-			$this->dispatcher = new Dispatcher( $config, $this->queue, $this->client, $this->status );
+			$this->error_worker->schedule();
+			$this->error_collector->schedule();
+
+			$this->dispatcher       = new Dispatcher( $config, $this->queue, $this->client, $this->status );
+			$this->error_dispatcher = new ErrorDispatcher( $config, $this->error_queue, $this->client, $this->status );
 
 			foreach ( $this->listeners( $this->dispatcher, $config ) as $listener ) {
 				$listener->register();
 			}
+
+			( new RuntimeInterceptor( $this->error_dispatcher ) )->register();
 
 			$this->boot_admin();
 		} catch ( Throwable $e ) {
@@ -179,6 +239,19 @@ class Plugin {
 	}
 
 	/**
+	 * Registers the WP-CLI error-collection command, when running under WP-CLI.
+	 *
+	 * @return void
+	 */
+	protected function boot_cli(): void {
+		if ( ( ! defined( 'WP_CLI' ) || ! WP_CLI ) || null === $this->error_collector ) {
+			return;
+		}
+
+		( new ErrorLogCommand( $this->error_collector ) )->register();
+	}
+
+	/**
 	 * Attaches the admin status page.
 	 *
 	 * @return void
@@ -209,5 +282,14 @@ class Plugin {
 	 */
 	public function dispatcher(): ?Dispatcher {
 		return $this->dispatcher;
+	}
+
+	/**
+	 * Request-scoped error-event dispatcher, when the module is active.
+	 *
+	 * @return ErrorDispatcher|null
+	 */
+	public function error_dispatcher(): ?ErrorDispatcher {
+		return $this->error_dispatcher;
 	}
 }

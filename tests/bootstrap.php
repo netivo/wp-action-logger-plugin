@@ -9,6 +9,12 @@ if ( ! defined( 'ABSPATH' ) ) {
 	define( 'ABSPATH', sys_get_temp_dir() . '/' );
 }
 
+// A dedicated, cleanable sandbox for tests that touch the filesystem (FileScanner,
+// FileTailer), kept out of ABSPATH so it never collides with its parent directory.
+if ( ! defined( 'WP_CONTENT_DIR' ) ) {
+	define( 'WP_CONTENT_DIR', sys_get_temp_dir() . '/nt-al-mu-tests/wp-content' );
+}
+
 // WordPress defines these in wp-includes/default-constants.php before any
 // mu-plugin loads; class constants that use them (e.g. Updater::CHECK_INTERVAL)
 // need them defined before the class declaration is parsed.

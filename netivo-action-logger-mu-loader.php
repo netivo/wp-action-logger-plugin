@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Netivo Action Logger (MU) Loader
  * Description: Loads the Netivo Action Logger must-use plugin from its own directory. Copy this file to wp-content/mu-plugins/ alongside the netivo-action-logger-mu/ directory; see that package's README.
- * Version: 0.2.1
+ * Version: 0.6.0
  * Author: Netivo
  * Author URI: https://netivo.pl
  * License: Proprietary
