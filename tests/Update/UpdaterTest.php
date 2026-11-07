@@ -148,6 +148,100 @@ final class UpdaterTest extends TestCase {
 		self::assertFileDoesNotExist( $extracted );
 	}
 
+	public function test_apply_fails_and_never_extracts_when_the_checksum_does_not_match(): void {
+		$zip_dir  = $this->make_temp_dir( 'zip' );
+		$zip_path = $zip_dir . '/release.zip';
+		file_put_contents( $zip_path, 'zip-bytes' );
+
+		$config   = Config::from_array( [] );
+		$releases = Mockery::mock( ReleaseClient::class );
+		$releases->shouldReceive( 'latest_release' )->once()->andReturn(
+			[
+				'version'      => '9.9.9',
+				'tag'          => 'v9.9.9',
+				'zip_url'      => 'https://example.com/a.zip',
+				'html_url'     => '',
+				'checksum_url' => 'https://example.com/a.zip.sha256',
+			]
+		);
+
+		Functions\when( 'get_transient' )->justReturn( false );
+		Functions\when( 'set_transient' )->justReturn( true );
+		Functions\when( 'wp_get_current_user' )->justReturn( new \WP_User() );
+		// A well-formed but wrong digest: real content hashes to something else.
+		Functions\when( 'wp_remote_get' )->justReturn( [ 'body' => str_repeat( '0', 64 ) ] );
+		Functions\when( 'wp_remote_retrieve_response_code' )->justReturn( 200 );
+		Functions\when( 'wp_remote_retrieve_body' )->alias( static fn ( array $response ): string => $response['body'] );
+		Functions\when( 'wp_delete_file' )->alias(
+			static function ( string $file ): void {
+				if ( is_file( $file ) ) {
+					unlink( $file );
+				}
+			}
+		);
+
+		$client = Mockery::mock( Client::class );
+		$client->shouldReceive( 'send' )->once()->withArgs(
+			static function ( array $events ): bool {
+				return 'mu_plugin_update_failed' === $events[0]['action'];
+			}
+		)->andReturn( new DeliveryResult( DeliveryResult::DELIVERED ) );
+
+		$updater = new UpdaterUsingFixedDownload( $config, $client, $releases, $zip_path );
+		$result  = $updater->apply();
+
+		self::assertFalse( $result['success'] );
+		self::assertStringContainsString( 'checksum', $result['error'] );
+		self::assertFalse( $updater->extract_was_called, 'extract() must not run once checksum verification fails.' );
+	}
+
+	public function test_apply_proceeds_past_verification_when_the_checksum_matches(): void {
+		$zip_dir  = $this->make_temp_dir( 'zip' );
+		$zip_path = $zip_dir . '/release.zip';
+		file_put_contents( $zip_path, 'zip-bytes' );
+		$digest = hash_file( 'sha256', $zip_path );
+
+		$config   = Config::from_array( [] );
+		$releases = Mockery::mock( ReleaseClient::class );
+		$releases->shouldReceive( 'latest_release' )->once()->andReturn(
+			[
+				'version'      => '9.9.9',
+				'tag'          => 'v9.9.9',
+				'zip_url'      => 'https://example.com/a.zip',
+				'html_url'     => '',
+				'checksum_url' => 'https://example.com/a.zip.sha256',
+			]
+		);
+
+		Functions\when( 'get_transient' )->justReturn( false );
+		Functions\when( 'set_transient' )->justReturn( true );
+		Functions\when( 'wp_get_current_user' )->justReturn( new \WP_User() );
+		Functions\when( 'wp_remote_get' )->justReturn( [ 'body' => $digest ] );
+		Functions\when( 'wp_remote_retrieve_response_code' )->justReturn( 200 );
+		Functions\when( 'wp_remote_retrieve_body' )->alias( static fn ( array $response ): string => $response['body'] );
+		Functions\when( 'wp_delete_file' )->alias(
+			static function ( string $file ): void {
+				if ( is_file( $file ) ) {
+					unlink( $file );
+				}
+			}
+		);
+
+		// extract() throws by default once reached (no real zip), so a failure
+		// here (rather than the checksum error) proves verification passed.
+		$client = Mockery::mock( Client::class );
+		$client->shouldReceive( 'send' )->once()->withArgs(
+			static function ( array $events ): bool {
+				return 'mu_plugin_update_failed' === $events[0]['action'];
+			}
+		)->andReturn( new DeliveryResult( DeliveryResult::DELIVERED ) );
+
+		$updater = new UpdaterUsingFixedDownload( $config, $client, $releases, $zip_path );
+		$updater->apply();
+
+		self::assertTrue( $updater->extract_was_called, 'extract() must run once checksum verification passes.' );
+	}
+
 	/**
 	 * Creates a fresh temporary directory, tracked for removal in tearDown().
 	 *
@@ -214,5 +308,42 @@ final class UpdaterUsingFixedExtraction extends Updater {
 		unset( $zip_file );
 
 		return $this->fixed_extracted_dir;
+	}
+}
+
+/**
+ * Test double that hands apply() a real, fixed file as the "download"
+ * result, so verify_checksum() can hash real bytes, and records whether
+ * extract() was reached afterward.
+ */
+final class UpdaterUsingFixedDownload extends Updater {
+	public bool $extract_was_called = false;
+
+	/**
+	 * @param Config        $config         Module configuration.
+	 * @param Client        $client         Ingestion API client.
+	 * @param ReleaseClient $releases       Release lookup.
+	 * @param string        $fixed_zip_path Real file on disk apply() should treat as the downloaded zip.
+	 */
+	public function __construct(
+		Config $config,
+		Client $client,
+		ReleaseClient $releases,
+		private readonly string $fixed_zip_path
+	) {
+		parent::__construct( $config, $client, $releases );
+	}
+
+	protected function download( string $url ): string {
+		unset( $url );
+
+		return $this->fixed_zip_path;
+	}
+
+	protected function extract( string $zip_file ): string {
+		unset( $zip_file );
+		$this->extract_was_called = true;
+
+		throw new \RuntimeException( 'stop before the real unzip_file()/swap() machinery; this test only exercises verify_checksum().' );
 	}
 }

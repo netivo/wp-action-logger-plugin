@@ -49,6 +49,26 @@ final class Config {
 	public const DEFAULT_UPDATE_REPO = 'netivo/wp-action-logger-plugin';
 
 	/**
+	 * Keys the `netivo_action_logger_mu_config` filter may supply. Deliberately
+	 * excludes `update_repo`/`update_token`: those drive the self-updater's
+	 * live-filesystem swap, and any other plugin or theme active on the same
+	 * site can register a callback on this filter, so letting it set the
+	 * update source would let a co-installed plugin redirect the updater to
+	 * an attacker-controlled repository. Those two keys may only ever come
+	 * from `defaults()` or a wp-config constant, both of which require
+	 * filesystem/operator-level trust rather than mere code execution in the
+	 * WordPress process.
+	 */
+	private const FILTERABLE_KEYS = [
+		'api_url',
+		'api_key',
+		'enabled',
+		'delivery',
+		'timeout',
+		'trusted_proxies',
+	];
+
+	/**
 	 * Configuration key => constant name.
 	 */
 	private const CONSTANTS = [
@@ -99,7 +119,8 @@ final class Config {
 		// @param tag, since the result is validated below rather than trusted.
 		$filtered = apply_filters( 'netivo_action_logger_mu_config', $values );
 		if ( is_array( $filtered ) ) {
-			$values = array_merge( $values, self::known( $filtered ) );
+			$filterable = array_intersect_key( $filtered, array_flip( self::FILTERABLE_KEYS ) );
+			$values     = array_merge( $values, self::known( $filterable ) );
 		}
 
 		$values = array_merge( $values, self::from_constants() );
