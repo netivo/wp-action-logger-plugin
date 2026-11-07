@@ -242,6 +242,44 @@ final class UpdaterTest extends TestCase {
 		self::assertTrue( $updater->extract_was_called, 'extract() must run once checksum verification passes.' );
 	}
 
+	public function test_apply_verifies_checksum_directly_from_manifest_sha256(): void {
+		$zip_dir  = $this->make_temp_dir( 'zip-sha' );
+		$zip_path = $zip_dir . '/release.zip';
+		file_put_contents( $zip_path, 'direct-sha256-bytes' );
+		$digest = hash_file( 'sha256', $zip_path );
+
+		$config   = Config::from_array( [] );
+		$releases = Mockery::mock( ReleaseClient::class );
+		$releases->shouldReceive( 'latest_release' )->once()->andReturn(
+			[
+				'version'  => '9.9.9',
+				'tag'      => 'v9.9.9',
+				'zip_url'  => 'https://example.com/a.zip',
+				'html_url' => '',
+				'sha256'   => $digest,
+			]
+		);
+
+		Functions\when( 'get_transient' )->justReturn( false );
+		Functions\when( 'set_transient' )->justReturn( true );
+		Functions\when( 'wp_get_current_user' )->justReturn( new \WP_User() );
+		Functions\when( 'wp_delete_file' )->alias(
+			static function ( string $file ): void {
+				if ( is_file( $file ) ) {
+					unlink( $file );
+				}
+			}
+		);
+
+		$client = Mockery::mock( Client::class );
+		$client->shouldReceive( 'send' )->once()->andReturn( new DeliveryResult( DeliveryResult::DELIVERED ) );
+
+		$updater = new UpdaterUsingFixedDownload( $config, $client, $releases, $zip_path );
+		$updater->apply();
+
+		self::assertTrue( $updater->extract_was_called, 'extract() must run directly when manifest sha256 matches.' );
+	}
+
 	/**
 	 * Creates a fresh temporary directory, tracked for removal in tearDown().
 	 *

@@ -125,7 +125,7 @@ class Updater {
 		}
 
 		try {
-			$this->verify_checksum( $zip, $release['checksum_url'] ?? null );
+			$this->verify_checksum( $zip, $release['checksum_url'] ?? null, $release['sha256'] ?? null );
 		} catch ( Throwable $e ) {
 			wp_delete_file( $zip );
 
@@ -179,26 +179,36 @@ class Updater {
 	}
 
 	/**
-	 * Verifies a downloaded zip against a `.sha256` checksum asset published
-	 * alongside it, when one exists.
+	 * Verifies a downloaded zip against a precomputed `.sha256` checksum or
+	 * an asset URL published alongside it, when one exists.
 	 *
-	 * This only guards against a corrupted or truncated download: the
-	 * checksum is fetched from the same GitHub release response as the zip
-	 * itself, so it is not independent artifact authentication and does not
-	 * by itself protect against a compromised release pipeline or repository
-	 * (see the project's security audit for the full-signature-verification
-	 * follow-up this is a stopgap for). When no checksum asset was published
-	 * for this release (e.g. one predating this check), verification is
-	 * skipped rather than failing the update.
+	 * When an explicit sha256 hex digest is provided directly in the release
+	 * metadata (e.g. from the Cloudflare repository manifest), it is verified
+	 * immediately without making any secondary network requests.
 	 *
-	 * @param string      $zip_file     Path to the downloaded zip.
-	 * @param string|null $checksum_url `.sha256` asset URL, or null when none was published.
+	 * @param string      $zip_file        Path to the downloaded zip.
+	 * @param string|null $checksum_url    `.sha256` asset URL, or null when none was published.
+	 * @param string|null $expected_sha256 Precomputed SHA-256 hex digest from manifest.
 	 *
 	 * @return void
 	 *
 	 * @throws RuntimeException When a checksum was published but the download doesn't match it, or can't be fetched.
 	 */
-	protected function verify_checksum( string $zip_file, ?string $checksum_url ): void {
+	protected function verify_checksum( string $zip_file, ?string $checksum_url, ?string $expected_sha256 = null ): void {
+		if ( null !== $expected_sha256 && '' !== $expected_sha256 ) {
+			$expected = strtolower( trim( $expected_sha256 ) );
+			if ( 1 !== preg_match( '/^[0-9a-f]{64}$/', $expected ) ) {
+				throw new RuntimeException( 'The published checksum is malformed.' );
+			}
+
+			$actual = hash_file( 'sha256', $zip_file );
+			if ( false === $actual || ! hash_equals( $expected, $actual ) ) {
+				throw new RuntimeException( 'The downloaded release does not match its published checksum.' );
+			}
+
+			return;
+		}
+
 		if ( null === $checksum_url ) {
 			return;
 		}

@@ -8,6 +8,7 @@
 namespace Netivo\ActionLoggerMU\Update;
 
 use Netivo\ActionLoggerMU\Config;
+use Netivo\ActionLoggerMU\Plugin;
 use WP_Error;
 
 if ( ! defined( 'ABSPATH' ) ) {
@@ -18,10 +19,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Class ReleaseClient
  *
- * Reads the latest published GitHub release of the update repository
- * (`Config::update_repo()`), which is expected to carry a `.zip` asset laid
- * out to match `wp-content/mu-plugins/` exactly (the loader file plus the
- * plugin directory), built by that repository's own release workflow.
+ * Reads the latest published release from the Netivo Cloudflare repository
+ * (`Config::update_url()`), falling back to GitHub Releases if an external
+ * GitHub repository is configured directly.
  */
 class ReleaseClient {
 
@@ -34,22 +34,135 @@ class ReleaseClient {
 	}
 
 	/**
-	 * Fetches the latest release, or null when it cannot be determined (no
-	 * repo configured, a transport error, or a release without a zip asset).
+	 * Fetches the latest release, or null when it cannot be determined.
 	 *
-	 * @return array{version: string, tag: string, zip_url: string, html_url: string, checksum_url: string|null}|null
+	 * @return array{
+	 *     version: string,
+	 *     tag: string,
+	 *     zip_url: string,
+	 *     html_url: string,
+	 *     checksum_url: string|null,
+	 *     sha256: string|null,
+	 *     requires_php?: string,
+	 *     requires_wp?: string,
+	 *     tested_wp?: string,
+	 *     changelog?: string
+	 * }|null
 	 */
 	public function latest_release(): ?array {
+		$url = trim( $this->config->update_url() );
+		if ( '' !== $url ) {
+			$manifest_release = $this->latest_from_manifest( $url, $this->config->update_slug() );
+			if ( null !== $manifest_release ) {
+				return $manifest_release;
+			}
+		}
+
 		$repo = trim( $this->config->update_repo() );
-		if ( '' === $repo ) {
+		if ( '' !== $repo ) {
+			return $this->latest_from_github( $repo );
+		}
+
+		return null;
+	}
+
+	/**
+	 * Fetches release information from the Cloudflare repository JSON manifest.
+	 *
+	 * @param string $base_url Repository base URL.
+	 * @param string $slug     Plugin slug.
+	 *
+	 * @return array{
+	 *     version: string,
+	 *     tag: string,
+	 *     zip_url: string,
+	 *     html_url: string,
+	 *     checksum_url: string|null,
+	 *     sha256: string|null,
+	 *     requires_php: string,
+	 *     requires_wp: string,
+	 *     tested_wp: string,
+	 *     changelog: string
+	 * }|null
+	 */
+	private function latest_from_manifest( string $base_url, string $slug ): ?array {
+		if ( '' === $slug ) {
 			return null;
 		}
 
+		$manifest_url = sprintf( '%s/%s/info.json', rtrim( $base_url, '/' ), $slug );
+
+		// phpcs:ignore WordPressVIPMinimum.Functions.RestrictedFunctions.wp_remote_get_wp_remote_get -- read-only update check against Cloudflare CDN.
+		$response = wp_remote_get(
+			$manifest_url,
+			[
+				'headers' => [
+					'Accept'     => 'application/json',
+					'User-Agent' => 'netivo-action-logger-mu/' . Plugin::VERSION . '; ' . ( function_exists( 'home_url' ) ? home_url() : '' ),
+				],
+				'timeout' => 3,
+			]
+		);
+
+		if ( $response instanceof WP_Error ) {
+			return null;
+		}
+
+		$code = (int) wp_remote_retrieve_response_code( $response );
+		if ( $code < 200 || $code >= 300 ) {
+			return null;
+		}
+
+		$data = json_decode( (string) wp_remote_retrieve_body( $response ), true );
+		if ( ! is_array( $data ) || ! isset( $data['latest'], $data['versions'] ) || ! is_array( $data['versions'] ) ) {
+			return null;
+		}
+
+		$latest_version = (string) $data['latest'];
+		$version_data   = $data['versions'][ $latest_version ] ?? null;
+
+		if ( ! is_array( $version_data ) || ! isset( $version_data['download_url'] ) || ! is_string( $version_data['download_url'] ) ) {
+			return null;
+		}
+
+		$tag          = isset( $version_data['tag'] ) && is_string( $version_data['tag'] ) ? $version_data['tag'] : 'v' . $latest_version;
+		$checksum_url = isset( $version_data['checksum']['url'] ) && is_string( $version_data['checksum']['url'] ) ? $version_data['checksum']['url'] : null;
+		$sha256       = isset( $version_data['checksum']['value'] ) && is_string( $version_data['checksum']['value'] ) ? strtolower( trim( $version_data['checksum']['value'] ) ) : null;
+
+		return [
+			'version'      => ltrim( $latest_version, 'v' ),
+			'tag'          => $tag,
+			'zip_url'      => $version_data['download_url'],
+			'html_url'     => isset( $data['homepage'] ) && is_string( $data['homepage'] ) ? $data['homepage'] : '',
+			'checksum_url' => $checksum_url,
+			'sha256'       => $sha256,
+			'requires_php' => isset( $version_data['requires_php'] ) && is_string( $version_data['requires_php'] ) ? $version_data['requires_php'] : '8.2',
+			'requires_wp'  => isset( $version_data['requires_wp'] ) && is_string( $version_data['requires_wp'] ) ? $version_data['requires_wp'] : '6.3',
+			'tested_wp'    => isset( $version_data['tested_wp'] ) && is_string( $version_data['tested_wp'] ) ? $version_data['tested_wp'] : '6.7',
+			'changelog'    => isset( $version_data['changelog'] ) && is_string( $version_data['changelog'] ) ? $version_data['changelog'] : '',
+		];
+	}
+
+	/**
+	 * Legacy GitHub Releases client for fallback or backward compatibility.
+	 *
+	 * @param string $repo Repository owner/name.
+	 *
+	 * @return array{
+	 *     version: string,
+	 *     tag: string,
+	 *     zip_url: string,
+	 *     html_url: string,
+	 *     checksum_url: string|null,
+	 *     sha256: null
+	 * }|null
+	 */
+	private function latest_from_github( string $repo ): ?array {
 		$headers = [
 			'Accept'     => 'application/vnd.github+json',
 			'User-Agent' => 'netivo-action-logger-mu',
 		];
-		$token = $this->config->update_token();
+		$token   = $this->config->update_token();
 		if ( '' !== $token ) {
 			$headers['Authorization'] = 'Bearer ' . $token;
 		}
@@ -88,6 +201,7 @@ class ReleaseClient {
 			'zip_url'      => $zip_url,
 			'html_url'     => is_string( $release['html_url'] ?? null ) ? $release['html_url'] : '',
 			'checksum_url' => self::checksum_asset_url( $release, $zip_url ),
+			'sha256'       => null,
 		];
 	}
 

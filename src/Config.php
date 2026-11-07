@@ -44,18 +44,28 @@ final class Config {
 	private const KEY_PATTERN = '/^nt_live_[0-9a-f]{32}$/';
 
 	/**
-	 * `owner/repo` the self-updater checks for new releases.
+	 * Default base URL of the Cloudflare update repository.
+	 */
+	public const DEFAULT_UPDATE_URL = 'https://updates.netivo.dev';
+
+	/**
+	 * Default repository slug for this plugin.
+	 */
+	public const DEFAULT_UPDATE_SLUG = 'netivo-action-logger-mu';
+
+	/**
+	 * `owner/repo` the self-updater checks for new releases (legacy fallback).
 	 */
 	public const DEFAULT_UPDATE_REPO = 'netivo/wp-action-logger-plugin';
 
 	/**
 	 * Keys the `netivo_action_logger_mu_config` filter may supply. Deliberately
-	 * excludes `update_repo`/`update_token`: those drive the self-updater's
-	 * live-filesystem swap, and any other plugin or theme active on the same
-	 * site can register a callback on this filter, so letting it set the
-	 * update source would let a co-installed plugin redirect the updater to
-	 * an attacker-controlled repository. Those two keys may only ever come
-	 * from `defaults()` or a wp-config constant, both of which require
+	 * excludes `update_url`/`update_slug`/`update_repo`/`update_token`: those
+	 * drive the self-updater's live-filesystem swap, and any other plugin or
+	 * theme active on the same site can register a callback on this filter, so
+	 * letting it set the update source would let a co-installed plugin redirect
+	 * the updater to an attacker-controlled endpoint. Those keys may only ever
+	 * come from `defaults()` or a wp-config constant, both of which require
 	 * filesystem/operator-level trust rather than mere code execution in the
 	 * WordPress process.
 	 */
@@ -78,6 +88,8 @@ final class Config {
 		'delivery'        => 'NETIVO_ACTION_LOGGER_MU_DELIVERY',
 		'timeout'         => 'NETIVO_ACTION_LOGGER_MU_TIMEOUT',
 		'trusted_proxies' => 'NETIVO_ACTION_LOGGER_MU_TRUSTED_PROXIES',
+		'update_url'      => 'NETIVO_ACTION_LOGGER_MU_UPDATE_URL',
+		'update_slug'     => 'NETIVO_ACTION_LOGGER_MU_UPDATE_SLUG',
 		'update_repo'     => 'NETIVO_ACTION_LOGGER_MU_UPDATE_REPO',
 		'update_token'    => 'NETIVO_ACTION_LOGGER_MU_UPDATE_TOKEN',
 	];
@@ -91,8 +103,10 @@ final class Config {
 	 * @param string   $delivery        One of the DELIVERY_* constants.
 	 * @param int      $timeout         Total HTTP timeout in seconds.
 	 * @param string[] $trusted_proxies Proxy IPs whose X-Forwarded-For header is trusted.
-	 * @param string   $update_repo     `owner/repo` the self-updater checks for new releases.
-	 * @param string   $update_token    Optional GitHub token, for a private update repo or a higher rate limit.
+	 * @param string   $update_repo     `owner/repo` legacy fallback.
+	 * @param string   $update_token    Optional GitHub token legacy fallback.
+	 * @param string   $update_url      Base URL of the update repository.
+	 * @param string   $update_slug     Plugin identifier slug in the update repository.
 	 */
 	public function __construct(
 		private readonly string $api_url,
@@ -102,7 +116,9 @@ final class Config {
 		private readonly int $timeout,
 		private readonly array $trusted_proxies,
 		private readonly string $update_repo = self::DEFAULT_UPDATE_REPO,
-		private readonly string $update_token = ''
+		private readonly string $update_token = '',
+		private readonly string $update_url = self::DEFAULT_UPDATE_URL,
+		private readonly string $update_slug = self::DEFAULT_UPDATE_SLUG
 	) {
 	}
 
@@ -159,7 +175,9 @@ final class Config {
 			max( 1, min( 10, $timeout ) ),
 			$proxies,
 			is_string( $values['update_repo'] ) ? trim( $values['update_repo'] ) : self::DEFAULT_UPDATE_REPO,
-			is_string( $values['update_token'] ) ? trim( $values['update_token'] ) : ''
+			is_string( $values['update_token'] ) ? trim( $values['update_token'] ) : '',
+			is_string( $values['update_url'] ?? null ) ? trim( $values['update_url'] ) : self::DEFAULT_UPDATE_URL,
+			is_string( $values['update_slug'] ?? null ) ? trim( $values['update_slug'] ) : self::DEFAULT_UPDATE_SLUG
 		);
 	}
 
@@ -178,6 +196,8 @@ final class Config {
 			'trusted_proxies' => [],
 			'update_repo'     => self::DEFAULT_UPDATE_REPO,
 			'update_token'    => '',
+			'update_url'      => self::DEFAULT_UPDATE_URL,
+			'update_slug'     => self::DEFAULT_UPDATE_SLUG,
 		];
 	}
 
@@ -304,6 +324,24 @@ final class Config {
 	 */
 	public function update_token(): string {
 		return $this->update_token;
+	}
+
+	/**
+	 * Base URL of the Cloudflare update repository.
+	 *
+	 * @return string
+	 */
+	public function update_url(): string {
+		return $this->update_url;
+	}
+
+	/**
+	 * Plugin identifier slug in the update repository.
+	 *
+	 * @return string
+	 */
+	public function update_slug(): string {
+		return $this->update_slug;
 	}
 
 	/**

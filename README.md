@@ -69,8 +69,10 @@ define( 'NETIVO_ACTION_LOGGER_MU_API_KEY', 'nt_live_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
 | `delivery` | `NETIVO_ACTION_LOGGER_MU_DELIVERY` | `shutdown` | `shutdown` or `queue` (see below) |
 | `timeout` | `NETIVO_ACTION_LOGGER_MU_TIMEOUT` | `3` | HTTP timeout in seconds (1–10) |
 | `trusted_proxies` | `NETIVO_ACTION_LOGGER_MU_TRUSTED_PROXIES` | `[]` | Proxy IPs whose `X-Forwarded-For` is trusted for the client IP |
-| `update_repo` | `NETIVO_ACTION_LOGGER_MU_UPDATE_REPO` | `netivo/wp-action-logger-plugin` | `owner/repo` the self-updater checks for new releases |
-| `update_token` | `NETIVO_ACTION_LOGGER_MU_UPDATE_TOKEN` | — | Optional GitHub token, for a private update repo or a higher API rate limit |
+| `update_url` | `NETIVO_ACTION_LOGGER_MU_UPDATE_URL` | `https://updates.netivo.dev` | Cloudflare update repository base URL |
+| `update_slug` | `NETIVO_ACTION_LOGGER_MU_UPDATE_SLUG` | `netivo-action-logger-mu` | Plugin repository identifier slug |
+| `update_repo` | `NETIVO_ACTION_LOGGER_MU_UPDATE_REPO` | `netivo/wp-action-logger-plugin` | Legacy fallback `owner/repo` for direct GitHub release checks |
+| `update_token` | `NETIVO_ACTION_LOGGER_MU_UPDATE_TOKEN` | — | Legacy optional GitHub token |
 
 Priority, highest first: constants, then the `netivo_action_logger_mu_config`
 filter (lowest priority; useful for setting defaults from another mu-plugin).
