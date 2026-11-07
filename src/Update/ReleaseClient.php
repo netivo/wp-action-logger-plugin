@@ -37,7 +37,7 @@ class ReleaseClient {
 	 * Fetches the latest release, or null when it cannot be determined (no
 	 * repo configured, a transport error, or a release without a zip asset).
 	 *
-	 * @return array{version: string, tag: string, zip_url: string, html_url: string}|null
+	 * @return array{version: string, tag: string, zip_url: string, html_url: string, checksum_url: string|null}|null
 	 */
 	public function latest_release(): ?array {
 		$repo = trim( $this->config->update_repo() );
@@ -83,10 +83,11 @@ class ReleaseClient {
 		}
 
 		return [
-			'version'  => ltrim( $release['tag_name'], 'v' ),
-			'tag'      => $release['tag_name'],
-			'zip_url'  => $zip_url,
-			'html_url' => is_string( $release['html_url'] ?? null ) ? $release['html_url'] : '',
+			'version'      => ltrim( $release['tag_name'], 'v' ),
+			'tag'          => $release['tag_name'],
+			'zip_url'      => $zip_url,
+			'html_url'     => is_string( $release['html_url'] ?? null ) ? $release['html_url'] : '',
+			'checksum_url' => self::checksum_asset_url( $release, $zip_url ),
 		];
 	}
 
@@ -106,6 +107,41 @@ class ReleaseClient {
 				&& isset( $asset['browser_download_url'] )
 				&& is_string( $asset['browser_download_url'] )
 				&& str_ends_with( $asset['browser_download_url'], '.zip' )
+			) {
+				return $asset['browser_download_url'];
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Finds a `<zip-filename>.sha256` asset published alongside the zip, if
+	 * any. This is a corruption/truncation check only, not independent
+	 * artifact authentication: the digest is fetched from the same GitHub
+	 * release response as the zip itself, so it does not protect against a
+	 * compromised release pipeline or repository, only against a damaged or
+	 * incomplete download. Older releases published before this file existed
+	 * simply have no such asset, which `Updater` treats as "nothing to check"
+	 * rather than a failure.
+	 *
+	 * @param array<string, mixed> $release Decoded GitHub release.
+	 * @param string                $zip_url Resolved zip asset URL, to derive the expected sibling filename.
+	 *
+	 * @return string|null
+	 */
+	private static function checksum_asset_url( array $release, string $zip_url ): ?string {
+		$assets        = is_array( $release['assets'] ?? null ) ? $release['assets'] : [];
+		$zip_basename  = basename( (string) wp_parse_url( $zip_url, PHP_URL_PATH ) );
+		$expected_name = $zip_basename . '.sha256';
+
+		foreach ( $assets as $asset ) {
+			if (
+				is_array( $asset )
+				&& isset( $asset['name'], $asset['browser_download_url'] )
+				&& is_string( $asset['name'] )
+				&& is_string( $asset['browser_download_url'] )
+				&& $asset['name'] === $expected_name
 			) {
 				return $asset['browser_download_url'];
 			}

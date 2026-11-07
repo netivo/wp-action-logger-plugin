@@ -125,6 +125,14 @@ class Updater {
 		}
 
 		try {
+			$this->verify_checksum( $zip, $release['checksum_url'] ?? null );
+		} catch ( Throwable $e ) {
+			wp_delete_file( $zip );
+
+			return $this->finish( false, Plugin::VERSION, $release['version'], $e->getMessage() );
+		}
+
+		try {
 			$extracted = $this->extract( $zip );
 		} catch ( Throwable $e ) {
 			wp_delete_file( $zip );
@@ -168,6 +176,54 @@ class Updater {
 		}
 
 		return $file;
+	}
+
+	/**
+	 * Verifies a downloaded zip against a `.sha256` checksum asset published
+	 * alongside it, when one exists.
+	 *
+	 * This only guards against a corrupted or truncated download: the
+	 * checksum is fetched from the same GitHub release response as the zip
+	 * itself, so it is not independent artifact authentication and does not
+	 * by itself protect against a compromised release pipeline or repository
+	 * (see the project's security audit for the full-signature-verification
+	 * follow-up this is a stopgap for). When no checksum asset was published
+	 * for this release (e.g. one predating this check), verification is
+	 * skipped rather than failing the update.
+	 *
+	 * @param string      $zip_file     Path to the downloaded zip.
+	 * @param string|null $checksum_url `.sha256` asset URL, or null when none was published.
+	 *
+	 * @return void
+	 *
+	 * @throws RuntimeException When a checksum was published but the download doesn't match it, or can't be fetched.
+	 */
+	protected function verify_checksum( string $zip_file, ?string $checksum_url ): void {
+		if ( null === $checksum_url ) {
+			return;
+		}
+
+		// phpcs:ignore WordPressVIPMinimum.Functions.RestrictedFunctions.wp_remote_get_wp_remote_get,WordPressVIPMinimum.Performance.RemoteRequestTimeout.timeout_timeout -- small, read-only text-file fetch, same trust level as the release metadata call in ReleaseClient; a slightly longer timeout than that 3s call is tolerable since this only runs during an explicit admin-triggered update, never a page load.
+		$response = wp_remote_get( $checksum_url, [ 'timeout' => 10 ] );
+		if ( $response instanceof WP_Error ) {
+			throw new RuntimeException( 'Could not fetch the release checksum: ' . $response->get_error_message() ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- never rendered.
+		}
+		$code = (int) wp_remote_retrieve_response_code( $response );
+		if ( $code < 200 || $code >= 300 ) {
+			throw new RuntimeException( 'Could not fetch the release checksum (HTTP ' . $code . ').' ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- never rendered.
+		}
+
+		$body = trim( (string) wp_remote_retrieve_body( $response ) );
+		// Accept a bare hex digest or the standard `sha256sum` output format ("<hex>  <filename>").
+		$expected = strtolower( (string) preg_replace( '/\s.*$/', '', $body ) );
+		if ( 1 !== preg_match( '/^[0-9a-f]{64}$/', $expected ) ) {
+			throw new RuntimeException( 'The published checksum is malformed.' );
+		}
+
+		$actual = hash_file( 'sha256', $zip_file );
+		if ( false === $actual || ! hash_equals( $expected, $actual ) ) {
+			throw new RuntimeException( 'The downloaded release does not match its published checksum.' );
+		}
 	}
 
 	/**
