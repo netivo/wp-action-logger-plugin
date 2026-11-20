@@ -39,7 +39,7 @@ class UserListener extends AbstractListener {
 	 * @return void
 	 */
 	public function register(): void {
-		$this->on( 'user_register', 'user_registered' );
+		$this->on( 'user_register', 'user_registered', 10, 2 );
 		$this->on( 'profile_update', 'profile_updated', 10, 2 );
 		$this->on( 'set_user_role', 'role_changed', 10, 3 );
 		$this->on( 'delete_user', 'user_deleted', 10, 3 );
@@ -47,18 +47,28 @@ class UserListener extends AbstractListener {
 
 	/**
 	 * Account created (by an administrator or through self-registration).
+	 * Accounts created with a privileged role are reported as critical.
 	 *
-	 * @param int $user_id New user ID.
+	 * @param int                  $user_id  New user ID.
+	 * @param array<string, mixed> $userdata Data passed to wp_insert_user() (WordPress 5.8+).
 	 *
 	 * @return void
 	 */
-	public function user_registered( int $user_id ): void {
+	public function user_registered( int $user_id, array $userdata = [] ): void {
 		$user = get_userdata( $user_id );
 		if ( ! $user instanceof WP_User ) {
 			return;
 		}
 
-		$this->log( 'user', 'user_created', $this->user_entity( $user ), null, [ 'roles' => array_values( $user->roles ) ] );
+		$roles = array_values( $user->roles );
+		// Also honour the role requested on creation, in case the loaded user's roles are stale.
+		$requested = $userdata['role'] ?? null;
+		if ( is_string( $requested ) && '' !== $requested && ! in_array( $requested, $roles, true ) ) {
+			$roles[] = $requested;
+		}
+
+		$severity = [] !== array_intersect( $roles, self::PRIVILEGED_ROLES ) ? 'critical' : 'info';
+		$this->log( 'user', 'user_created', $this->user_entity( $user ), null, [ 'roles' => $roles ], $severity );
 	}
 
 	/**
