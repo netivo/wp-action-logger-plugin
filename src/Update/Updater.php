@@ -78,6 +78,14 @@ class Updater {
 		if ( ! $force ) {
 			$cached = get_transient( self::CHECK_TRANSIENT );
 			if ( is_array( $cached ) ) {
+				// Only the release lookup is cached; compare it against the version
+				// running now. A check cached by the request that applied an update
+				// still had the old Plugin::VERSION in memory, and would otherwise
+				// keep reporting "update available" for the new version.
+				$latest                     = isset( $cached['latest_version'] ) && is_string( $cached['latest_version'] ) ? $cached['latest_version'] : null;
+				$cached['current_version']  = Plugin::VERSION;
+				$cached['update_available'] = null !== $latest && version_compare( $latest, Plugin::VERSION, '>' );
+
 				return $cached;
 			}
 		}

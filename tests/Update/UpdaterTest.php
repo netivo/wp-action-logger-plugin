@@ -53,6 +53,32 @@ final class UpdaterTest extends TestCase {
 		self::assertSame( '9.9.9', $second['latest_version'] );
 	}
 
+	/**
+	 * Regression: the request that applied an update re-cached the check with
+	 * the old Plugin::VERSION still in memory, so after reloading, the new
+	 * version was shown alongside "update available: <same version>".
+	 */
+	public function test_cached_check_is_re_evaluated_against_the_running_version(): void {
+		$releases = Mockery::mock( ReleaseClient::class );
+		$releases->shouldReceive( 'latest_release' )->never();
+
+		Functions\when( 'get_transient' )->justReturn(
+			[
+				'checked_at'       => time(),
+				'current_version'  => '0.0.1',
+				'latest_version'   => Plugin::VERSION,
+				'update_available' => true,
+				'release'          => [ 'version' => Plugin::VERSION, 'tag' => 'v' . Plugin::VERSION, 'zip_url' => 'https://example.com/a.zip', 'html_url' => '' ],
+			]
+		);
+
+		$result = ( new Updater( Config::from_array( [] ), Mockery::mock( Client::class ), $releases ) )->check();
+
+		self::assertFalse( $result['update_available'] );
+		self::assertSame( Plugin::VERSION, $result['current_version'] );
+		self::assertSame( Plugin::VERSION, $result['latest_version'] );
+	}
+
 	public function test_check_reports_no_update_when_already_current(): void {
 		$config   = Config::from_array( [] );
 		$client   = Mockery::mock( Client::class );

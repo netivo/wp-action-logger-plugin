@@ -55,7 +55,7 @@ class Plugin {
 	 * Keep this in sync with the tag applied to the mirrored repository on
 	 * every release that touches this package.
 	 */
-	public const VERSION = '0.7.3';
+	public const VERSION = '0.7.4';
 
 	/**
 	 * Resolved configuration.

@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Netivo Action Logger (MU)
  * Description: Streams admin user actions to Netivo Action Logger telemetry. Read-only configuration via wp-config.php constants; see the bundled README for installation.
- * Version: 0.7.3
+ * Version: 0.7.4
  * Author: Netivo
  * Author URI: https://netivo.pl
  * License: Proprietary
