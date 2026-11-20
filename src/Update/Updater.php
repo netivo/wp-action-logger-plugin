@@ -237,13 +237,21 @@ class Updater {
 	}
 
 	/**
-	 * Extracts a downloaded zip to a fresh temporary directory.
+	 * Extracts a downloaded zip to a fresh staging directory next to the
+	 * running plugin (inside mu-plugins).
+	 *
+	 * Staging must live on the same filesystem as the plugin: swap() moves
+	 * the extracted directory into place with rename(), which fails with
+	 * "Invalid cross-device link" when the source is on another mount — as
+	 * happens on cPanel/CageFS hosts where get_temp_dir() is a separately
+	 * mounted /tmp. A dot-prefixed directory in mu-plugins is never loaded by
+	 * WordPress, which only includes top-level *.php files there.
 	 *
 	 * @param string $zip_file Path to the downloaded zip.
 	 *
 	 * @return string Path to the directory it was extracted into.
 	 *
-	 * @throws RuntimeException When extraction fails.
+	 * @throws RuntimeException When the staging directory can't be created or extraction fails.
 	 */
 	protected function extract( string $zip_file ): string {
 		if ( ! function_exists( 'WP_Filesystem' ) ) {
@@ -251,11 +259,14 @@ class Updater {
 		}
 		WP_Filesystem();
 
-		$destination = trailingslashit( get_temp_dir() ) . 'netivo-action-logger-mu-update-' . wp_generate_password( 12, false, false );
-		wp_mkdir_p( $destination );
+		$destination = dirname( NETIVO_ACTION_LOGGER_MU_DIR ) . '/.netivo-action-logger-mu-update-' . wp_generate_password( 12, false, false );
+		if ( ! wp_mkdir_p( $destination ) ) {
+			throw new RuntimeException( 'Could not create the update staging directory.' );
+		}
 
 		$result = unzip_file( $zip_file, $destination );
 		if ( $result instanceof WP_Error ) {
+			$this->remove_directory( $destination );
 			throw new RuntimeException( $result->get_error_message() ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- never rendered.
 		}
 

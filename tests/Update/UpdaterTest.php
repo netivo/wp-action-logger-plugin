@@ -281,6 +281,51 @@ final class UpdaterTest extends TestCase {
 	}
 
 	/**
+	 * Regression: staging in get_temp_dir() made swap()'s rename() fail with
+	 * "Invalid cross-device link" on hosts where /tmp is a separate mount.
+	 */
+	#[RunInSeparateProcess]
+	#[PreserveGlobalState( false )]
+	public function test_extract_stages_next_to_the_plugin_directory_not_in_the_temp_dir(): void {
+		$mu_plugins = $this->make_temp_dir( 'mu-plugins' );
+		define( 'NETIVO_ACTION_LOGGER_MU_DIR', $mu_plugins . '/netivo-action-logger-mu' );
+
+		Functions\when( 'WP_Filesystem' )->justReturn( true );
+		Functions\when( 'wp_generate_password' )->justReturn( 'abc123def456' );
+		Functions\when( 'wp_mkdir_p' )->alias( static fn ( string $dir ): bool => is_dir( $dir ) || mkdir( $dir, 0777, true ) );
+		Functions\expect( 'get_temp_dir' )->never();
+		Functions\when( 'unzip_file' )->justReturn( true );
+
+		$destination = ( new UpdaterExposingExtract( Config::from_array( [] ), Mockery::mock( Client::class ), Mockery::mock( ReleaseClient::class ) ) )->run_extract( '/irrelevant.zip' );
+
+		self::assertSame( $mu_plugins . '/.netivo-action-logger-mu-update-abc123def456', $destination );
+		self::assertDirectoryExists( $destination );
+	}
+
+	#[RunInSeparateProcess]
+	#[PreserveGlobalState( false )]
+	public function test_extract_removes_the_staging_directory_when_unzipping_fails(): void {
+		$mu_plugins = $this->make_temp_dir( 'mu-plugins' );
+		define( 'NETIVO_ACTION_LOGGER_MU_DIR', $mu_plugins . '/netivo-action-logger-mu' );
+
+		Functions\when( 'WP_Filesystem' )->justReturn( true );
+		Functions\when( 'wp_generate_password' )->justReturn( 'abc123def456' );
+		Functions\when( 'wp_mkdir_p' )->alias( static fn ( string $dir ): bool => is_dir( $dir ) || mkdir( $dir, 0777, true ) );
+		Functions\when( 'unzip_file' )->justReturn( new \WP_Error( 'incompatible_archive', 'Incompatible Archive.' ) );
+
+		$updater = new UpdaterExposingExtract( Config::from_array( [] ), Mockery::mock( Client::class ), Mockery::mock( ReleaseClient::class ) );
+
+		try {
+			$updater->run_extract( '/irrelevant.zip' );
+			self::fail( 'extract() must throw when unzip_file() fails.' );
+		} catch ( \RuntimeException $e ) {
+			self::assertSame( 'Incompatible Archive.', $e->getMessage() );
+		}
+
+		self::assertDirectoryDoesNotExist( $mu_plugins . '/.netivo-action-logger-mu-update-abc123def456' );
+	}
+
+	/**
 	 * Creates a fresh temporary directory, tracked for removal in tearDown().
 	 *
 	 * @param string $suffix Distinguishes directories within one test.
@@ -346,6 +391,15 @@ final class UpdaterUsingFixedExtraction extends Updater {
 		unset( $zip_file );
 
 		return $this->fixed_extracted_dir;
+	}
+}
+
+/**
+ * Test double exposing the real extract() so its staging location can be asserted.
+ */
+final class UpdaterExposingExtract extends Updater {
+	public function run_extract( string $zip_file ): string {
+		return $this->extract( $zip_file );
 	}
 }
 
